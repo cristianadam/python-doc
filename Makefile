@@ -48,7 +48,6 @@ OUTPUT_DIR   = output
 STAGE_DIR    = $(OUTPUT_DIR)/python-$(PYTHON_VERSION)-qch
 QCH          = $(OUTPUT_DIR)/python-$(PYTHON_VERSION).qch
 
-SPHINX_BUILD = $(VENV_DIR)/bin/sphinx-build
 VENV_PYTHON  = $(VENV_DIR)/bin/python
 
 # `make` cannot depend on a directory, whose timestamp says only when
@@ -65,6 +64,7 @@ all: doc_qch
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
 	@echo "  source      to clone the CPython documentation sources"
+	@echo "  update      to pull new commits into a clone already here"
 	@echo "  venv        to create the virtualenv Sphinx is run from"
 	@echo "  doc_qthelp  to run Sphinx's Qt Help builder over the sources"
 	@echo "  doc_qch     to build $(QCH)"
@@ -77,15 +77,21 @@ help:
 .PHONY: source
 source: $(SOURCE_STAMP)
 
+# Fetching the branch onto a detached head, which is both how a clone that is
+# already here is moved onto another version and how `update` refreshes one.
+FETCH_BRANCH = git -C "$(CPYTHON_DIR)" fetch --depth 1 origin "$(CPYTHON_BRANCH)" && git -C "$(CPYTHON_DIR)" checkout --detach FETCH_HEAD
+
 # Shallow, because nothing here reads the history, and of one branch, because
 # the clone is pinned to the version being built.  A clone that is already
-# here is moved onto the branch asked for and brought up to date, so that
-# switching versions does not call for a fresh one.
+# here is moved onto the branch asked for, so that switching versions does
+# not call for a fresh one.  The stamp names the branch, so this runs again
+# on the way back; what it does not do is go out to the network for a version
+# already checked out, which keeps a rebuild off the network and builds of
+# the same version comparable.  See `update` for picking up new commits.
 $(SOURCE_STAMP):
 	@if [ -d "$(CPYTHON_DIR)/.git" ]; then \
 		echo "Updating $(CPYTHON_DIR) to $(CPYTHON_BRANCH)"; \
-		git -C "$(CPYTHON_DIR)" fetch --depth 1 origin "$(CPYTHON_BRANCH)" && \
-		git -C "$(CPYTHON_DIR)" checkout --detach FETCH_HEAD; \
+		$(FETCH_BRANCH); \
 	else \
 		echo "Cloning $(CPYTHON_URL) at $(CPYTHON_BRANCH)"; \
 		git clone --depth 1 --branch "$(CPYTHON_BRANCH)" \
@@ -94,19 +100,39 @@ $(SOURCE_STAMP):
 	rm -f $(CPYTHON_DIR)/.stamp-*
 	touch "$@"
 
+# Brings the clone up to the tip of its branch, and leaves the stamp newer
+# than everything built from it, so that the next `make` rebuilds.
+.PHONY: update
+update:
+	@test -d "$(CPYTHON_DIR)/.git" \
+		|| { echo "No clone in $(CPYTHON_DIR); run \`make source'"; exit 1; }
+	$(FETCH_BRANCH)
+	rm -f $(CPYTHON_DIR)/.stamp-*
+	touch "$(SOURCE_STAMP)"
+
 # -- the virtualenv --------------------------------------------------------
 
 .PHONY: venv
 venv: $(VENV_STAMP)
 
-# CPython pins what its documentation builds with, so take the list from the
-# clone rather than keeping one of our own that would drift from it.  That
-# is also why the clone, and not the list in it, is what this waits on: the
-# list cannot be read to decide whether to run until the clone is here.
+# CPython pins what its documentation builds with, so take the pins from the
+# clone rather than keeping a list of our own that would drift from them.
+# `pylock.toml` is what CPython's own `Doc/Makefile` installs; the
+# `requirements.txt` beside it is the loose input those pins were resolved
+# from, and is the fallback for a branch old enough to predate the lock file.
+# That the pins come from the clone is also why the clone, and not the file
+# in it, is what this waits on: there is nothing to read to decide whether to
+# run until the clone is here.
 $(VENV_STAMP): $(SOURCE_STAMP)
 	$(PYTHON) -m venv "$(VENV_DIR)"
 	$(VENV_PYTHON) -m pip install --upgrade pip
-	$(VENV_PYTHON) -m pip install -r "$(DOC_DIR)/requirements.txt"
+	@if [ -f "$(DOC_DIR)/pylock.toml" ]; then \
+		echo "Installing the pins in $(DOC_DIR)/pylock.toml"; \
+		$(VENV_PYTHON) -m pip install -r "$(DOC_DIR)/pylock.toml"; \
+	else \
+		echo "No lock file; installing $(DOC_DIR)/requirements.txt"; \
+		$(VENV_PYTHON) -m pip install -r "$(DOC_DIR)/requirements.txt"; \
+	fi
 	touch "$@"
 
 # -- the Sphinx build ------------------------------------------------------
@@ -118,7 +144,16 @@ doc_qthelp: $(QTHELP_STAMP)
 # `Misc/NEWS.d` before it runs Sphinx.  Its `--fail-on-warning` is dropped:
 # it is there to hold contributors to a clean build, and a warning from a
 # builder upstream does not use is no reason to produce no archive here.
+#
+# The directory is emptied first.  Sphinx writes a page per document and
+# never removes the ones left over from documents that are gone, and this
+# directory is not named after the version, so a page dropped between two of
+# them -- `whatsnew/3.15.html` once the clone has moved to 3.14 -- would sit
+# there to be staged and listed in the archive.  Clearing it costs a full
+# rebuild, which this rule only runs for a clone or a virtualenv that has
+# changed under it anyway.
 $(QTHELP_STAMP): $(VENV_STAMP) $(SOURCE_STAMP)
+	rm -rf "$(QTHELP_DIR)"
 	$(MAKE) -C "$(DOC_DIR)" build BUILDER=qthelp \
 		VENVDIR="$(abspath $(VENV_DIR))" SPHINXERRORHANDLING=
 	touch "$@"

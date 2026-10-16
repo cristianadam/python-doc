@@ -64,7 +64,10 @@ Building
 That is `make source`, `make venv`, `make doc_qthelp` and `make doc_qch` in
 order, and leaves the archive at `output/python-3.15.qch`.  The first run
 clones CPython and builds a virtualenv, and takes a few minutes; afterwards
-only the steps whose inputs changed are repeated.
+only the steps whose inputs changed are repeated.  The clone stays on the
+commit it was made at, so that a rebuild needs no network and two builds of
+a version are the same build; `make update` moves it to the tip of its
+branch, and the `make` after that picks the new commits up.
 
 The version built is 3.15 unless another is asked for.  Any other lands
 beside it rather than replacing it -- the namespace carries the version, so

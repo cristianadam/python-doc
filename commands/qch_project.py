@@ -28,13 +28,15 @@ version so that several of these can be registered side by side.
 The identifiers.  Qt Creator answers F1 by looking up the word under the
 cursor among the `id` attributes, and what Sphinx puts there is read off the
 end of the index entry, which gets it right for the members of a class and
-wrong or missing for everything else (sphinx-doc/sphinx#1491).  Three things
+wrong or missing for everything else (sphinx-doc/sphinx#1491).  Four things
 are done about that.  The C API, whose entries read `PyList_New (C
-function)`, is filed under `C.PyList_New`; the `C.` is dropped.  The Python
-objects Sphinx could not parse an identifier for at all are taken from the
-build's own record of them; see `commands/qch_identifiers.py`.  And every
-identifier is given a keyword under the dotted name itself, so that the
-Index pane can be searched by it as well as by the `join() (in module
+function)`, is filed under `C.PyList_New`; the `C.` is dropped.  Where the
+same identifier is on several entries, the ones that are only a mention give
+up their claim on it, so that F1 arrives at the page documenting the name.
+The Python objects Sphinx could not parse an identifier for at all are taken
+from the build's own record of them; see `commands/qch_identifiers.py`.  And
+every identifier is given a keyword under the dotted name itself, so that
+the Index pane can be searched by it as well as by the `join() (in module
 os.path)` the website's index reads as.
 
 The file list.  Sphinx lists what it wrote; this lists what is actually in
@@ -43,6 +45,7 @@ and leaves out the scripts, which no help viewer runs.
 """
 
 import os
+import re
 
 from xml.etree import ElementTree
 
@@ -97,6 +100,45 @@ def fix_c_identifiers(keywords):
     return fixed
 
 
+# What Sphinx anchors an index entry on when the page only brings the name
+# up -- an `.. index::` directive, or a term marked up in the prose --
+# numbered in the order the page uses them.  The entry for the thing itself
+# is anchored on its name instead: `#c.Py_INCREF`, `#object.__bool__`.
+MENTION_ANCHOR_RE = re.compile(r'#index-\d+$')
+
+
+def is_mention(keyword):
+    return bool(MENTION_ANCHOR_RE.search(keyword.get('ref', '')))
+
+
+def prefer_reference_anchors(keywords):
+    """Takes the identifier off mentions that a real reference shares.
+
+    Sphinx gives the same identifier to every index entry for a name, the
+    page documenting it and the pages that merely bring it up alike, and
+    qhelpgenerator keeps only the first entry it sees for an identifier.  F1
+    on `Py_INCREF` lands on the sentence in the C API introduction that
+    mentions it rather than on the page defining it, and which of the two it
+    is comes down to the order Sphinx happened to write them in.
+
+    The identifier is what F1 reads and the name is what the Index pane
+    lists, so a mention keeps its place in the index and gives up only its
+    claim on the identifier.  Nothing is dropped where every entry for an
+    identifier is a mention: there is no reference to prefer.
+    """
+    referenced = {keyword.get('id') for keyword in keywords
+                  if keyword.get('id') is not None and not is_mention(keyword)}
+    dropped = 0
+
+    for keyword in keywords:
+        if keyword.get('id') not in referenced or not is_mention(keyword):
+            continue
+        del keyword.attrib['id']
+        dropped += 1
+
+    return dropped
+
+
 def add_keyword(keywords, name, ref, identifier=None):
     element = ElementTree.SubElement(keywords, 'keyword')
     element.set('name', name)
@@ -121,7 +163,15 @@ def add_python_identifiers(keywords, objects):
 
 
 def add_dotted_keywords(keywords):
-    """Adds a keyword under the dotted name of every object that has one."""
+    """Adds a keyword under the dotted name of every object that has one.
+
+    These carry no `id` of their own.  The identifier is already on the
+    keyword this one was made from, and qhelpgenerator keeps only the first
+    entry it sees for an identifier -- repeating it here would mean every
+    one of these is thrown away as a duplicate of what it was made from,
+    which is the whole set of them.  An entry with no identifier is always
+    kept, and F1 is answered by the original either way.
+    """
     seen = {(keyword.get('name'), keyword.get('ref'))
             for keyword in keywords}
     added = 0
@@ -133,7 +183,7 @@ def add_dotted_keywords(keywords):
             continue
 
         seen.add((identifier, ref))
-        add_keyword(keywords, identifier, ref, identifier)
+        add_keyword(keywords, identifier, ref)
         added += 1
 
     return added
@@ -202,11 +252,13 @@ def write_help_project(src_path, dst_path, namespace, virtual_folder,
     if keywords is None:
         keywords = ElementTree.SubElement(section, 'keywords')
 
-    counts = {
-        'c_identifiers': fix_c_identifiers(keywords),
-        'python_identifiers': add_python_identifiers(keywords,
-                                                     python_objects),
-    }
+    counts = {'c_identifiers': fix_c_identifiers(keywords)}
+    # After the C API is unscoped, so that the entries that collide under
+    # `PyList_New` are seen to, and before the dotted names, which are made
+    # from whatever identifiers are left standing.
+    counts['mentions'] = prefer_reference_anchors(keywords)
+    counts['python_identifiers'] = add_python_identifiers(keywords,
+                                                          python_objects)
     counts['dotted_keywords'] = add_dotted_keywords(keywords)
     counts['keywords'] = len(keywords)
 

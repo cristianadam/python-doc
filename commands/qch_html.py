@@ -26,7 +26,9 @@ lists, the admonitions and the index tables get their layout -- so the pages
 arrive flat.  `basic.css` is already in the output directory, unreferenced,
 so it is linked ahead of `nonav.css`, which is the order a theme would have
 imported it in, and the sheet this package generates is linked after both so
-that it has the last word.  See `commands/qch_css.py`.
+that it has the last word.  Should the theme start linking it upstream, only
+that insertion is skipped; the generated sheet is still linked, since it is
+needed either way.  See `commands/qch_css.py`.
 
 The second is a footer naming the page online, so that a reader who has
 reached a page in the help pane can get to the version that is kept up to
@@ -60,27 +62,31 @@ def stylesheet_prefix(href):
 
 
 def relink_stylesheets(text, linked_css_name):
-    """Links `basic.css` before the theme sheet and ours after all of them."""
+    """Links `basic.css` before the theme sheet and ours after all of them.
+
+    Returns the page and whether it was one this applies to, which is every
+    page the theme rendered.
+    """
     matches = list(STYLESHEET_RE.finditer(text))
     if not matches:
-        return text
+        return text, False
 
     theme = None
     prefix = None
+    has_base = False
 
     for match in matches:
-        href = match.group(1)
-        if href.split('?')[0].endswith('/' + BASE_CSS_NAME):
-            # Already linked; nothing here applies.
-            return text
-        if href.split('?')[0].endswith('/nonav.css'):
+        href = match.group(1).split('?')[0]
+        if href.endswith('/' + BASE_CSS_NAME):
+            has_base = True
+        if href.endswith('/nonav.css'):
             theme = match
             prefix = stylesheet_prefix(href)
 
     if prefix is None:
         # Not a page of the theme -- the two standalone profiler examples
         # under `_static` are whole documents with styles of their own.
-        return text
+        return text, False
 
     # Back to front, so that an insertion does not move the one after it.
     last = matches[-1]
@@ -88,9 +94,15 @@ def relink_stylesheets(text, linked_css_name):
             + '\n    ' + LINK_TAG % (prefix + linked_css_name)
             + text[last.end():])
 
+    if has_base:
+        # The theme links it itself, as upstream means it to; ours is then
+        # all that was missing.  Linking it twice would override whatever
+        # the sheets in between have to say about the same selectors.
+        return text, True
+
     return (text[:theme.start()]
             + LINK_TAG % (prefix + BASE_CSS_NAME) + '\n    '
-            + text[theme.start():])
+            + text[theme.start():]), True
 
 
 def add_footer(text, url):
@@ -103,12 +115,13 @@ def preprocess_html_file(src_path, dst_path, rel_path, linked_css_name,
     """Writes the page at `src_path` to `dst_path`, fitted to a help viewer.
 
     `rel_path` is where the page sits in the documentation set, which is what
-    says where it is to be found online.
+    says where it is to be found online.  Reports whether the stylesheets
+    were relinked, which they are on every page the theme rendered.
     """
     with open(src_path, encoding='utf-8') as a_file:
         text = a_file.read()
 
-    text = relink_stylesheets(text, linked_css_name)
+    text, relinked = relink_stylesheets(text, linked_css_name)
 
     if online_url:
         url = '%s/%s' % (online_url.rstrip('/'),
@@ -118,3 +131,5 @@ def preprocess_html_file(src_path, dst_path, rel_path, linked_css_name,
     os.makedirs(os.path.dirname(dst_path), exist_ok=True)
     with open(dst_path, 'w', encoding='utf-8') as a_file:
         a_file.write(text)
+
+    return relinked

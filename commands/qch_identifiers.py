@@ -66,19 +66,20 @@ def python_objects(doc_dir):
     """
     try:
         environment = load_environment(doc_dir)
+        if environment is None:
+            print('No Sphinx environment beside the doctrees; building '
+                  'without the identifiers it holds')
+            return {}
+
+        objects = environment.domaindata['py']['objects']
+        return {name: '%s.html#%s' % (entry.docname, entry.node_id)
+                for name, entry in objects.items()}
     except Exception as error:                  # noqa: BLE001 -- see below
-        # Unpickling runs arbitrary imports, and a CPython that has moved its
-        # extensions or a Sphinx that has changed the environment format can
-        # fail in a good many ways, none of which is worth stopping over.
+        # Reading it is as much of a reach as unpickling it, so both are in
+        # here: unpickling runs arbitrary imports, and a CPython that has
+        # moved its extensions or a Sphinx that has renamed the domain data
+        # or reshaped its entries can fail in a good many ways, none of
+        # which is worth stopping over.
         print('Could not read the Sphinx environment (%s); building without '
               'the identifiers it holds' % error)
         return {}
-
-    if environment is None:
-        print('No Sphinx environment beside the doctrees; building without '
-              'the identifiers it holds')
-        return {}
-
-    objects = environment.domaindata['py']['objects']
-    return {name: '%s.html#%s' % (entry.docname, entry.node_id)
-            for name, entry in objects.items()}

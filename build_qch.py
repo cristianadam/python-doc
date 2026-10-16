@@ -48,6 +48,13 @@ HELP_PROJECT_NAME = 'Python.qhp'
 # What this writes, beside the pages, for qhelpgenerator to read.
 OUTPUT_PROJECT_NAME = 'python.qhp'
 
+# How much of the output can sensibly go unrecognised by the relinking: the
+# standalone examples under `_static` are whole documents of their own, and
+# there are two of them.  Much past that and the theme has changed the markup
+# `qch_html` reads, which would otherwise be an archive of unstyled pages
+# built without complaint.
+UNSTYLED_SHARE = 0.05
+
 
 def excluded(name):
     return (name in qch_project.EXCLUDED_NAMES
@@ -55,8 +62,14 @@ def excluded(name):
 
 
 def stage_tree(source_root, dest_root, online_url):
-    """Copies the output of the builder, fitting the pages on the way."""
+    """Copies the output of the builder, fitting the pages on the way.
+
+    Counts the pages whose stylesheets were relinked as well as the pages
+    seen, since a page the theme rendered that this did not recognise is
+    one that arrives unstyled.
+    """
     pages = 0
+    relinked = 0
     copied = 0
 
     for directory, _, names in os.walk(source_root):
@@ -70,7 +83,7 @@ def stage_tree(source_root, dest_root, online_url):
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
 
             if name.endswith('.html'):
-                qch_html.preprocess_html_file(
+                relinked += qch_html.preprocess_html_file(
                     src_path, dst_path, rel_path,
                     qch_css.LINKED_CSS_NAME, online_url)
                 pages += 1
@@ -78,7 +91,7 @@ def stage_tree(source_root, dest_root, online_url):
                 shutil.copyfile(src_path, dst_path)
                 copied += 1
 
-    return pages, copied
+    return pages, relinked, copied
 
 
 def main():
@@ -115,8 +128,13 @@ def main():
     if os.path.isdir(args.dst):
         shutil.rmtree(args.dst)
 
-    pages, copied = stage_tree(args.src, args.dst, args.online_url)
-    print('Fitted %d pages and copied %d other files' % (pages, copied))
+    pages, relinked, copied = stage_tree(args.src, args.dst, args.online_url)
+    print('Fitted %d pages, %d of them relinked, and copied %d other files'
+          % (pages, relinked, copied))
+    if pages - relinked > pages * UNSTYLED_SHARE:
+        print('Warning: %d of the %d pages link no stylesheet this knows how '
+              'to relink, so they will arrive unstyled; the theme has '
+              'probably changed' % (pages - relinked, pages), file=sys.stderr)
 
     written = qch_css.write_stylesheets(os.path.join(args.dst, CSS_DIR))
     print('Wrote %s' % ', '.join(written))
@@ -130,10 +148,10 @@ def main():
 
     print('Help project: %d keywords over %d files'
           % (counts['keywords'], counts['files']))
-    print('  %d C API identifiers unscoped, %d Python objects added, '
-          '%d dotted names added'
-          % (counts['c_identifiers'], counts['python_identifiers'],
-             counts['dotted_keywords']))
+    print('  %d C API identifiers unscoped, %d mentions unidentified, '
+          '%d Python objects added, %d dotted names added'
+          % (counts['c_identifiers'], counts['mentions'],
+             counts['python_identifiers'], counts['dotted_keywords']))
     print('Namespace %s, virtual folder %s'
           % (args.namespace, args.virtual_folder))
 
