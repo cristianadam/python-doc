@@ -122,11 +122,37 @@ jobs:
         # Release assets are served as they are, so the .qch goes up as it is:
         # it is already compressed, and packing it would hand the reader an
         # archive holding an archive holding the one file they wanted.
+        #
+        # The notes are written here rather than left to `--generate-notes`,
+        # which lists merged pull requests: true of nothing in this repository,
+        # and no use to somebody who has arrived wanting to know what the file
+        # is and how to open it.
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           archive="output/python-$VERSION.qch"
+
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          The Python $VERSION documentation as a Qt Help archive, built from
+          CPython's \`Doc/\` tree with Sphinx's \`qthelp\` builder and fitted to a
+          help viewer: styled pages in a light and a dark palette, F1 answered
+          by identifier, and a namespace of its own so that several versions can
+          be registered at once.
+
+          Register it with Qt Creator under **Help > Documentation > Add**, or
+          open it directly:
+
+              assistant -register python-$VERSION.qch
+
+          Built by [this run](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+          To build it yourself, see the README -- \`make\` is all it takes.
+
+          The archive is Python's own documentation and carries the PSF license
+          of the CPython clone it was built from; this project's own sources are
+          GPLv3 or later.
+          EOF
 
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             # a release made by hand, or an earlier run of this workflow
@@ -134,6 +160,6 @@ jobs:
               --clobber "$archive"
           else
             gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --title "Python $VERSION documentation" --generate-notes \
+              --title "Python $VERSION documentation" --notes-file "$notes" \
               "$archive"
           fi
