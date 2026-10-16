@@ -1,0 +1,139 @@
+# Builds the Qt Help (.qch) archive, and publishes it when a version is tagged.
+#
+# Nothing has to be fetched by hand: `make` clones CPython's Doc/ tree itself
+# and builds the documentation out of it, so a run here is the same `make` as
+# a run anywhere, on a machine where no local clone, virtualenv or Qt install
+# can have got into it.  The Sphinx build is the long pole, at a few minutes.
+
+name: Qt Help archive
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+# A run that has been superseded is of no interest; a tag builds on its own.
+concurrency:
+  group: qch-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write      # the publishing step attaches the archive
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The archive is built with whatever CPython pins its own documentation
+      # build to; this is only the interpreter that builds the virtualenv,
+      # pinned so that a new default on the runner cannot change the output.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install qhelpgenerator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qt6-documentation-tools
+          # Qt keeps it out of the way under /usr/lib/qt6/libexec, and the
+          # package is free to move it, so ask dpkg where it landed.
+          qhg=$(dpkg -L qt6-documentation-tools | grep -E '/qhelpgenerator$' | head -1)
+          test -x "$qhg" || { echo "::error::qhelpgenerator not found"; exit 1; }
+          echo "QHELPGENERATOR=$qhg" >> "$GITHUB_ENV"
+
+      - name: Work out the version
+        run: |
+          version=$(sed -n 's/^PYTHON_VERSION *?= *//p' Makefile)
+          test -n "$version" || { echo "::error::no PYTHON_VERSION in the Makefile"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Building Python $version"
+
+          # A tag that disagrees with the Makefile would publish an archive
+          # whose name does not match the release it hangs under.
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match PYTHON_VERSION=$version in the Makefile"
+            exit 1
+          fi
+
+      - name: Build the archive
+        run: make doc_qch QHELPGENERATOR="$QHELPGENERATOR"
+
+      - name: Check the archive
+        # The .qch is a SQLite database, so it can say for itself whether the
+        # pages arrived in it and whether F1 can still find anything.  Each of
+        # these four names reached the index by a different one of the paths
+        # that fill it, and all four have been silently dropped before now.
+        run: |
+          python - <<'EOF'
+          import sqlite3
+          import sys
+          import os
+
+          db = sqlite3.connect('output/python-%s.qch' % os.environ['VERSION'])
+          keywords, = db.execute('select count(*) from IndexTable').fetchone()
+          files, = db.execute('select count(*) from FileNameTable').fetchone()
+          sheets = sorted(name for (name,) in db.execute(
+              "select Name from FileNameTable where Name like '_static/offline%'"))
+
+          print('index entries: %d, files: %d' % (keywords, files))
+          print('stylesheets: %s' % ', '.join(sheets))
+
+          expected = ('str.format',                      # a class member
+                      'PyList_New',                      # the C API, unscoped
+                      'os.path.join',                    # from the environment
+                      'calendar.TextCalendar.prmonth')   # what Sphinx got right
+          missing = [name for name in expected if not db.execute(
+              'select 1 from IndexTable where Name = ?', (name,)).fetchone()]
+          if missing:
+              sys.exit('not in the index: %s' % ', '.join(missing))
+
+          # F1 is answered by the identifier, and the page it opens is the one
+          # that documents the name rather than one that mentions it.
+          target, = db.execute(
+              "select f.Name || '#' || i.Anchor from IndexTable i"
+              " join FileNameTable f on f.FileId = i.FileId"
+              " where i.Identifier = 'Py_INCREF'").fetchone()
+          print('F1 on Py_INCREF: %s' % target)
+          if not target.endswith('#c.Py_INCREF'):
+              sys.exit('Py_INCREF resolves to %s' % target)
+
+          if keywords < 20000:
+              sys.exit('only %d index entries in the archive' % keywords)
+          if files < 500:
+              sys.exit('only %d files in the archive' % files)
+          if len(sheets) != 3:
+              sys.exit('expected three stylesheets, found %d' % len(sheets))
+          EOF
+
+      # Handed to this, GitHub zips whatever it is given and serves the result
+      # under the artifact's name, so it gets the .qch itself.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-doc-${{ env.VERSION }}
+          path: output/python-${{ env.VERSION }}.qch
+          if-no-files-found: error
+
+      - name: Publish the release
+        # Release assets are served as they are, so the .qch goes up as it is:
+        # it is already compressed, and packing it would hand the reader an
+        # archive holding an archive holding the one file they wanted.
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="output/python-$VERSION.qch"
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # a release made by hand, or an earlier run of this workflow
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --clobber "$archive"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "Python $VERSION documentation" --generate-notes \
+              "$archive"
+          fi
