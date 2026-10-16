@@ -1,0 +1,556 @@
+/*   Copyright (C) 2026  Cristian Adam <cristian.adam@gmail.com>
+ *
+ *   Adapted from "Utilities/Sphinx/static-qthelp/qthelp.css.in" of CMake,
+ *   Copyright (C) Kitware, Inc. and Contributors, which is distributed under
+ *   the OSI-approved BSD 3-Clause License; see https://cmake.org/licensing.
+ *   That license permits the redistribution below, and continues to govern
+ *   the parts taken from it.
+ *
+ *   This file is part of python-doc
+ *
+ *   This program is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program.  If not, see http://www.gnu.org/licenses/.
+ */
+
+/* Styles the Qt Help (.qch) rendition of the Python documentation.
+ *
+ * Sphinx's `qthelp` builder renders with its `nonav` theme, which drops the
+ * sidebar and the scripts -- which is what a help pane wants -- but which
+ * also contributes almost no colors of its own.  The `pygments.css` it emits
+ * carries the line-number rules and nothing else, so the code samples arrive
+ * with no highlighting at all.  This template supplies both.
+ *
+ * It is configured twice, by `commands/qch_css.py`: with a light palette
+ * into `offline.css` and `offline-simple.css`, and with a dark one into
+ * `offline-dark.css`.  Qt Assistant and Qt Creator serve the dark sheet in
+ * place of either of the other two when their own theme is dark, which is
+ * why there are two names for the light one -- older Qt Creator asks for
+ * `offline.css` when its theme is light and `offline-dark.css` otherwise,
+ * newer versions ask for `offline-simple.css` either way.
+ *
+ * The light palette is what docs.python.org renders as, read off the
+ * stylesheets it serves rather than out of python-docs-theme's `theme.toml`,
+ * whose `linkcolor` and the rest are overridden by `pydoctheme.css` and no
+ * longer what reaches the page.
+ *
+ * The pages link `basic.css` and `nonav.css` ahead of this file and this
+ * file settles what they disagree on, so what belongs here is color and the
+ * handful of places a help pane differs from a browser window.  Both viewers
+ * lay out with litehtml, which supports a good deal less CSS than a browser
+ * does, so the rules are kept blunt: no custom properties, no `:not()`, no
+ * grid, no flexbox, and nothing that leans on a selector matching only
+ * sometimes.
+ *
+ * Adapted from `Utilities/Sphinx/static-qthelp/qthelp.css.in` of CMake,
+ * which solves the same problem for the same builder.
+ */
+
+/* -- the page -------------------------------------------------------------- */
+
+html,
+body {
+  background-color: @body_bg@;
+  color: @body_fg@;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: sans-serif;
+}
+
+div.document,
+div.documentwrapper,
+div.body {
+  background-color: @body_bg@;
+  color: @body_fg@;
+}
+
+/* `basic.css` caps the body width for the html build, where the sidebar
+   takes up the rest of the window.  A help pane has no sidebar and is narrow
+   to begin with, so let the text have all of it, up to a measure that still
+   reads well on a wide one.  The side padding is the website's, which the
+   headings below reach back out through. */
+div.body {
+  min-width: 0;
+  max-width: 62em;
+  height: auto;
+  padding: 0 20px 30px 20px;
+}
+
+/* -- hyperlinks ------------------------------------------------------------ */
+
+/* `nonav.css` states its link colors on `a:link` and `a:visited`, which
+   outrank a bare `a` whatever order the sheets are linked in, so the same
+   two have to be restated here to be overridden -- and `a` with them, since
+   litehtml has neither pseudo-class and goes by that one alone. */
+a,
+a:link {
+  color: @link@;
+  text-decoration: none;
+}
+
+a:visited {
+  color: @link_visited@;
+  text-decoration: none;
+}
+
+a:hover {
+  color: @link_hover@;
+  text-decoration: underline;
+}
+
+/* -- headings -------------------------------------------------------------- */
+
+/* The negative side margins pull the rule under a heading back out through
+   the padding of `div.body`, so that it spans the pane rather than the
+   column of text; the website does the same. */
+div.body h1,
+div.body h2,
+div.body h3,
+div.body h4,
+div.body h5,
+div.body h6 {
+  font-family: sans-serif;
+  background-color: @body_bg@;
+  font-weight: normal;
+  color: @head_fg@;
+  border-bottom: 1px solid @head_border@;
+  margin: 20px -20px 10px -20px;
+  padding: 3px 0 3px 10px;
+}
+
+div.body h1 { margin-top: 0; font-size: 200%; }
+div.body h2 { font-size: 160%; }
+div.body h3 { font-size: 140%; }
+div.body h4 { font-size: 120%; }
+div.body h5 { font-size: 110%; }
+div.body h6 { font-size: 100%; }
+
+/* A section title that links back to the table of contents is still a
+   title; keep it from being painted as a link. */
+div.body h1 a,
+div.body h2 a,
+div.body h3 a,
+div.body h4 a,
+div.body h5 a,
+div.body h6 a {
+  color: @head_fg@;
+  text-decoration: none;
+}
+
+a.headerlink {
+  color: @headerlink@;
+  font-size: 0.8em;
+  padding: 0 4px 0 4px;
+  text-decoration: none;
+}
+
+/* -- the landing page ------------------------------------------------------ */
+
+/* `index.html` is a hand-written page rather than anything docutils
+   generated: a run of two-column blocks, each a heading over a pair of lists
+   of links with a line of description under each.  It carries a <style> of
+   its own that lays the columns out with `grid`, which litehtml does not
+   have, so they are laid out here instead -- as `inline-block` rather than
+   floated, since a float has to be cleared by the element after it and
+   nothing in this markup can be selected to do that.
+   `basic.css` sizes the links and italicises the descriptions already. */
+div.contentstable {
+  margin: 0.4em 0 1.6em 0;
+}
+
+div.contentstable ul {
+  display: inline-block;
+  vertical-align: top;
+  width: 47%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+li.biglink {
+  line-height: 150%;
+  margin: 0 0 1em 0;
+}
+
+/* -- body text ------------------------------------------------------------- */
+
+div.body p,
+div.body dd,
+div.body li,
+div.body blockquote {
+  line-height: 135%;
+}
+
+div.body blockquote {
+  margin-left: 1.5em;
+  padding-left: 0;
+  border: none;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid @head_border@;
+}
+
+p.rubric {
+  font-weight: bold;
+  color: @head_fg@;
+}
+
+/* -- code ------------------------------------------------------------------ */
+
+/* A font stack is worth exactly its first entry here: litehtml hands the
+   whole list to Qt, which resolves the first family and, when it is not
+   installed, substitutes its own default rather than trying the next one.
+   `basic.css` asks for Consolas first, which nothing outside Windows has, so
+   every signature came out proportional.  `monospace` is one of the few
+   names litehtml answers for itself. */
+pre,
+code,
+tt,
+.sig,
+.classifier,
+span.pre {
+  font-family: monospace;
+}
+
+pre {
+  padding: 5px;
+  background-color: @pre_bg@;
+  color: @pre_fg@;
+  line-height: 120%;
+  border: 1px solid @pre_border@;
+  border-radius: 3px;
+  overflow: auto;
+}
+
+div.highlight,
+div.highlight pre {
+  background-color: @pre_bg@;
+}
+
+/* The line-number column of a literal include is a table cell holding a
+   <pre> of its own, which would otherwise be boxed a second time. */
+table.highlighttable {
+  border: none;
+  background-color: @pre_bg@;
+}
+
+table.highlighttable td {
+  border: none;
+  padding: 0;
+}
+
+table.highlighttable td.linenos pre {
+  border: none;
+  border-right: 1px solid @pre_border@;
+  border-radius: 0;
+  color: @muted@;
+}
+
+table.highlighttable td.code pre {
+  border: none;
+  border-radius: 0;
+}
+
+code,
+tt {
+  background-color: @code_bg@;
+  color: @code_fg@;
+  padding: 0 1px 0 1px;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+/* Inside a tinted box the plain code background does not read; the website
+   gives each of them one of its own. */
+.note code,
+.note tt {
+  background-color: @note_code_bg@;
+}
+
+.warning code,
+.warning tt {
+  background-color: @warning_code_bg@;
+}
+
+/* A cross-reference is marked up as inline code; let the link color win over
+   the code color, as it does on the website. */
+a code,
+a tt {
+  background-color: transparent;
+  color: @link@;
+  font-weight: normal;
+}
+
+h1 code, h2 code, h3 code, h4 code, h5 code, h6 code,
+dt code,
+th code {
+  background-color: transparent;
+  padding: 0;
+}
+
+/* -- object signatures ----------------------------------------------------- */
+
+.sig-name,
+code.descname {
+  font-weight: bold;
+  background-color: transparent;
+}
+
+.sig-prename,
+code.descclassname {
+  font-weight: normal;
+  background-color: transparent;
+}
+
+.sig-param {
+  font-style: normal;
+}
+
+/* What the Index pane and a `#fragment` link land on. */
+dt:target,
+span.highlighted,
+.highlight .hll {
+  background-color: @hll_bg@;
+}
+
+/* The lead-in of the parameter, return and exception lists under a
+   signature, which the website tints to set it off from the body. */
+dl.field-list > dt {
+  background-color: @field_bg@;
+  color: @body_fg@;
+  border-radius: 3px;
+  padding: 0 0.4em;
+}
+
+.refcount {
+  color: @muted@;
+  font-style: italic;
+}
+
+.optional {
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+/* -- admonitions ----------------------------------------------------------- */
+
+div.admonition,
+div.impl-detail,
+div.availability,
+div.audit-hook,
+div.topic,
+aside.topic,
+nav.contents,
+div.sidebar,
+aside.sidebar {
+  background-color: @note_bg@;
+  border: 1px solid @note_border@;
+  border-radius: 3px;
+  padding: 7px 10px;
+  margin: 1em 0;
+}
+
+p.admonition-title {
+  font-weight: bold;
+  color: @head_fg@;
+  margin-top: 0;
+  display: inline;
+}
+
+p.admonition-title:after {
+  content: ": ";
+}
+
+div.admonition p.admonition-title + p {
+  display: inline;
+}
+
+div.seealso {
+  background-color: @seealso_bg@;
+  border-color: @seealso_border@;
+}
+
+div.warning,
+div.danger,
+div.error,
+div.caution,
+div.attention {
+  background-color: @warning_bg@;
+  border-color: @warning_border@;
+}
+
+/* -- "New in", "Changed in", "Deprecated since" ---------------------------- */
+
+/* The website sets these off with a rule down the lead-in edge and no box,
+   and colors the lead-in rather than the paragraph. */
+div.versionadded,
+div.versionchanged,
+div.deprecated,
+div.deprecated-removed,
+div.versionremoved {
+  background-color: transparent;
+  border: none;
+  border-left: 3px solid @note_border@;
+  border-radius: 0;
+  padding: 0 1em;
+  margin: 1em 0;
+}
+
+.versionmodified {
+  font-style: italic;
+}
+
+div.versionadded {
+  border-left-color: @versionadded_border@;
+}
+
+div.versionadded .versionmodified {
+  color: @versionadded@;
+}
+
+div.versionchanged {
+  border-left-color: @versionchanged_border@;
+}
+
+div.versionchanged .versionmodified {
+  color: @versionchanged@;
+}
+
+div.deprecated,
+div.deprecated-removed,
+div.versionremoved {
+  border-left-color: @deprecated_border@;
+}
+
+div.deprecated .versionmodified,
+div.deprecated-removed .versionmodified,
+div.versionremoved .versionmodified {
+  color: @deprecated@;
+}
+
+/* -- tables ---------------------------------------------------------------- */
+
+table.docutils {
+  border-collapse: collapse;
+  border: 1px solid @border@;
+  border-radius: 3px;
+  margin: 10px 0;
+}
+
+table.docutils td,
+table.docutils th {
+  border: 1px solid @border@;
+  padding: 0.3em 0.5em;
+}
+
+table.docutils th {
+  background-color: @table_head_bg@;
+  color: @body_fg@;
+  text-align: left;
+}
+
+div.code-block-caption {
+  color: @caption_fg@;
+  background-color: @caption_bg@;
+  padding: 2px 6px;
+}
+
+/* The index, the module index and the search results are laid out with
+   tables that are not meant to be seen. */
+table.indextable,
+table.indextable td,
+table.indextable th,
+table.hlist,
+table.hlist td,
+table.longtable.contentstable,
+table.longtable.contentstable td {
+  border: none;
+  background-color: transparent;
+}
+
+table.indextable tr.cap {
+  background-color: @table_head_bg@;
+}
+
+div.genindex-jumpbox,
+div.modindex-jumpbox {
+  border-top: 1px solid @border@;
+  border-bottom: 1px solid @border@;
+  padding: 0.3em 0;
+  margin: 0.6em 0;
+}
+
+.classifier {
+  color: @muted@;
+}
+
+/* -- figures and footnotes ------------------------------------------------- */
+
+figcaption,
+div.figure p.caption,
+figure p.caption {
+  color: @muted@;
+  font-style: italic;
+}
+
+aside.footnote,
+div.citation,
+dl.footnote,
+dl.citation {
+  color: @muted@;
+  font-size: 95%;
+}
+
+aside.footnote a,
+div.citation a {
+  color: @link@;
+}
+
+/* The diagrams are drawn as black marks on nothing at all, which is
+   invisible on a dark page; a raster image can only be handed the
+   background it was drawn against. */
+@image_rule@
+
+/* -- keys, menus and the rest ---------------------------------------------- */
+
+kbd,
+.kbd {
+  background-color: @code_bg@;
+  color: @code_fg@;
+  border: 1px solid @border@;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-family: monospace;
+}
+
+.guilabel,
+.menuselection {
+  color: @head_fg@;
+  font-weight: bold;
+}
+
+/* The footer this package adds to each page; see `commands/qch_html.py`.
+   It sits outside `div.body`, so it carries that element's side padding of
+   its own rather than inheriting it. */
+div.qch-footer {
+  clear: both;
+  margin: 2.5em 20px 1.5em 20px;
+  padding-top: 0.5em;
+  border-top: 1px solid @border@;
+  color: @muted@;
+  font-size: 90%;
+}
